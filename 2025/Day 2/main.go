@@ -44,7 +44,7 @@ func readInput(filePath string) []Range {
 	return ranges
 }
 
-func isIDValid(id int) bool {
+func part1IsIDValid(id int) bool {
 	sID := strconv.Itoa(id)
 
 	if len(sID)%2 != 0 {
@@ -54,20 +54,56 @@ func isIDValid(id int) bool {
 	return sID[:len(sID)/2] != sID[len(sID)/2:]
 }
 
+func part2IsIDValid(id int) bool {
+	sID := strconv.Itoa(id)
+	letters := 1
+
+	for letters <= len(sID)/2 {
+		tmp := ""
+
+		for len(tmp) < len(sID) {
+			tmp += sID[:letters]
+		}
+
+		if tmp == sID {
+			return false
+		}
+
+		letters += 1
+	}
+
+	return true
+}
+
 func main() {
 	ranges := readInput("./input.txt")
-	results := 0
 
+	fmt.Println("=== First Problem ===")
+	results := 0
 	for _, r := range ranges {
 		count := 0
 		for i := r.Start; i <= r.End; i++ {
-			if !isIDValid(i) {
+			if !part1IsIDValid(i) {
 				count += i
 			}
 		}
-		fmt.Println(r.Start, "->", r.End, "found:", count)
 		results += count
 	}
-
 	fmt.Println("Results:", results)
+	fmt.Println("=== First Problem ===")
+
+	fmt.Println("=== Second Problem ===")
+	results = 0
+	for _, r := range ranges {
+		count := 0
+		for i := r.Start; i <= r.End; i++ {
+			if !part2IsIDValid(i) {
+				count += i
+			}
+		}
+		results += count
+	}
+	fmt.Println("Results:", results)
+	fmt.Println("=== Second Problem ===")
+
 }
