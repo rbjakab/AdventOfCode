@@ -4,108 +4,141 @@ import (
 	"bufio"
 	"fmt"
 	"log"
-	"math"
 	"os"
-	"sort"
-	"strings"
 	"time"
 )
 
-type Tile struct {
-	X, Y float64
+type Point struct {
+	X, Y int64
 }
 
-type Rect [2]Tile
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
 
-func readRedTiles(filename string) []Tile {
-	file, err := os.Open(filename)
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func abs64(a int64) int64 {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+// readPoints reads "x,y" per line and normalizes so that minX, minY become 0.
+// Translation doesn't change areas or inside/outside, but keeps numbers small.
+func readPoints(filename string) []Point {
+	f, err := os.Open(filename)
 	if err != nil {
 		log.Fatalf("failed to open %s: %v", filename, err)
 	}
-	defer file.Close()
+	defer f.Close()
 
-	scanner := bufio.NewScanner(file)
-	var tiles []Tile
+	sc := bufio.NewScanner(f)
+	var pts []Point
 
-	// Initialize mins to +∞ so the first tile sets them
-	minX, minY := math.Inf(1), math.Inf(1)
+	var minX, minY int64
+	first := true
 
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		var x, y float64
-		if _, err := fmt.Sscanf(line, "%f,%f", &x, &y); err == nil {
-
-			// track minimums
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			continue
+		}
+		var x, y int64
+		if _, err := fmt.Sscanf(line, "%d,%d", &x, &y); err != nil {
+			log.Fatalf("bad line %q: %v", line, err)
+		}
+		if first {
+			minX, minY = x, y
+			first = false
+		} else {
 			if x < minX {
 				minX = x
 			}
 			if y < minY {
 				minY = y
 			}
-
-			tiles = append(tiles, Tile{X: x, Y: y})
 		}
+		pts = append(pts, Point{X: x, Y: y})
+	}
+	if err := sc.Err(); err != nil {
+		log.Fatalf("scan error: %v", err)
 	}
 
-	if err := scanner.Err(); err != nil {
-		log.Fatalf("error reading %s: %v", filename, err)
+	// normalize
+	for i := range pts {
+		pts[i].X -= minX
+		pts[i].Y -= minY
 	}
 
-	// Normalize all tiles by subtracting minX, minY
-	for i := range tiles {
-		tiles[i].X -= minX
-		tiles[i].Y -= minY
-	}
-
-	return tiles
+	return pts
 }
 
-func rectangleArea(a, b Tile) float64 {
-	return (math.Abs(a.X-b.X) + 1.0) * (math.Abs(a.Y-b.Y) + 1.0)
+// rectangleArea: inclusive grid-rectangle area between two opposite corners.
+func rectangleArea(a, b Point) int64 {
+	w := abs64(a.X-b.X) + 1
+	h := abs64(a.Y-b.Y) + 1
+	return w * h
 }
 
-// orientation test helper
-func orient(ax, ay, bx, by, cx, cy float64) float64 {
-	return (bx-ax)*(cy-ay) - (by-ay)*(cx-ax)
+// orientation / cross product: sign tells CW/CCW/collinear.
+// >0: left turn, <0: right turn, 0: collinear
+func orient(a, b, c Point) int64 {
+	return (b.X-a.X)*(c.Y-a.Y) - (b.Y-a.Y)*(c.X-a.X)
 }
 
-// check if P lies on segment A->B
-func onSegment(px, py, ax, ay, bx, by float64) bool {
-	if orient(ax, ay, bx, by, px, py) != 0 {
+// check if point p lies on segment ab (inclusive)
+func onSegment(p, a, b Point) bool {
+	if orient(a, b, p) != 0 {
 		return false
 	}
-	if px < min(ax, bx) || px > max(ax, bx) {
+	if p.X < min64(a.X, b.X) || p.X > max64(a.X, b.X) {
 		return false
 	}
-	if py < min(ay, by) || py > max(ay, by) {
+	if p.Y < min64(a.Y, b.Y) || p.Y > max64(a.Y, b.Y) {
 		return false
 	}
 	return true
 }
 
-// PointInPolygon returns true if point P is inside or on boundary.
-func PointInPolygon(p Tile, poly []Tile) bool {
-	px, py := p.X, p.Y
+// PointInPolygon: even-odd rule, returns true if inside or on boundary.
+func pointInPolygon(p Point, poly []Point) bool {
 	n := len(poly)
+	if n < 3 {
+		return false
+	}
+
+	// check boundary first
+	for i := 0; i < n; i++ {
+		j := (i + 1) % n
+		if onSegment(p, poly[i], poly[j]) {
+			return true
+		}
+	}
 
 	inside := false
-
+	px, py := p.X, p.Y
 	for i := 0; i < n; i++ {
 		j := (i + 1) % n
 		xi, yi := poly[i].X, poly[i].Y
 		xj, yj := poly[j].X, poly[j].Y
 
-		// 1. Check if point lies exactly on this edge → inside
-		if onSegment(px, py, xi, yi, xj, yj) {
-			return true
-		}
-
-		// 2. Ray-casting: does edge cross the ray horizontally?
+		// does horizontal ray at y=py intersect edge (yi,yj)?
 		intersects := (yi > py) != (yj > py)
 		if intersects {
-			// compute x coordinate of intersection
-			xIntersect := xi + (py-yi)*(xj-xi)/(yj-yi)
-			if px <= xIntersect {
+			// compute x coordinate of intersection as float
+			// cast to float64 only here; coordinates are small enough.
+			xIntersect := float64(xi) + float64(py-yi)*float64(xj-xi)/float64(yj-yi)
+			if float64(px) <= xIntersect {
 				inside = !inside
 			}
 		}
@@ -114,88 +147,62 @@ func PointInPolygon(p Tile, poly []Tile) bool {
 	return inside
 }
 
-func isRectangleInsideInOthers(a, b Tile, rectangles map[Rect]struct{}) bool {
-	for rectangle := range rectangles {
-		topLeft := Tile{min(rectangle[0].X, rectangle[1].X), min(rectangle[0].Y, rectangle[1].Y)}
-		bottomRight := Tile{max(rectangle[0].X, rectangle[1].X), max(rectangle[0].Y, rectangle[1].Y)}
+// properSegmentIntersect returns true if segments ab and cd intersect
+// in a "proper" crossing (interior point), not just touching or overlapping.
+func properSegmentIntersect(a, b, c, d Point) bool {
+	o1 := orient(a, b, c)
+	o2 := orient(a, b, d)
+	o3 := orient(c, d, a)
+	o4 := orient(c, d, b)
 
-		if (topLeft.X <= a.X && a.X <= bottomRight.X) && (topLeft.Y <= a.Y && a.Y <= bottomRight.Y) &&
-			(topLeft.X <= b.X && b.X <= bottomRight.X) && (topLeft.Y <= b.Y && b.Y <= bottomRight.Y) {
-			return true
-		}
+	// if any collinear, we treat as non-proper (touching/overlap allowed)
+	if o1 == 0 || o2 == 0 || o3 == 0 || o4 == 0 {
+		return false
 	}
 
-	return false
+	return (o1 > 0) != (o2 > 0) && (o3 > 0) != (o4 > 0)
 }
 
-func isRectangleValid(a, b Tile, edges []Tile, insideArray map[Tile]struct{}) bool {
-	left := min(a.X, b.X)
-	right := max(a.X, b.X)
-	top := min(a.Y, b.Y)
-	bottom := max(a.Y, b.Y)
+// rectangleInsidePolygon checks if the entire inclusive rectangle
+// [x1..x2] x [y1..y2] is contained in the polygon (boundary allowed).
+// poly is the loop formed by the red tiles in order.
+func rectangleInsidePolygon(a, b Point, poly []Point) bool {
+	x1 := min64(a.X, b.X)
+	x2 := max64(a.X, b.X)
+	y1 := min64(a.Y, b.Y)
+	y2 := max64(a.Y, b.Y)
 
-	// Check top and bottom edges
-	for x := left; x <= right; x++ {
-		topTile := Tile{x, top}
-		_, okTop := insideArray[topTile]
-		if !okTop {
-			inside := PointInPolygon(topTile, edges)
-			if inside {
-				insideArray[topTile] = struct{}{}
-			} else {
-				return false
-			}
-		}
+	// corners
+	corners := []Point{
+		{x1, y1},
+		{x2, y1},
+		{x2, y2},
+		{x1, y2},
+	}
 
-		bottomTile := Tile{x, bottom}
-		_, okBottom := insideArray[bottomTile]
-		if !okBottom {
-			inside := PointInPolygon(bottomTile, edges)
-			if inside {
-				insideArray[bottomTile] = struct{}{}
-			} else {
-				return false
-			}
+	// 1) all corners must be inside or on boundary
+	for _, c := range corners {
+		if !pointInPolygon(c, poly) {
+			return false
 		}
 	}
 
-	// Check left and right edges
-	for y := top; y <= bottom; y++ {
-		leftTile := Tile{left, y}
-		_, okLeft := insideArray[leftTile]
-		if !okLeft {
-			inside := PointInPolygon(leftTile, edges)
-			if inside {
-				insideArray[leftTile] = struct{}{}
-			} else {
-				return false
-			}
-		}
-
-		rightTile := Tile{right, y}
-		_, okRight := insideArray[rightTile]
-		if !okRight {
-			inside := PointInPolygon(rightTile, edges)
-			if inside {
-				insideArray[rightTile] = struct{}{}
-			} else {
-				return false
-			}
-		}
+	// 2) no rectangle edge may properly intersect any polygon edge
+	rectEdges := [][2]Point{
+		{{x1, y1}, {x2, y1}},
+		{{x2, y1}, {x2, y2}},
+		{{x2, y2}, {x1, y2}},
+		{{x1, y2}, {x1, y1}},
 	}
 
-	// check inside
-	for x := left + 1; x < right; x++ {
-		for y := top + 1; y < bottom; y++ {
-			tile := Tile{x, y}
-			if _, ok := insideArray[tile]; !ok {
-				inside := PointInPolygon(tile, edges)
-				if inside {
-					insideArray[tile] = struct{}{}
-				} else {
-					return false
-				}
-
+	n := len(poly)
+	for _, e := range rectEdges {
+		ra, rb := e[0], e[1]
+		for i := 0; i < n; i++ {
+			j := (i + 1) % n
+			pa, pb := poly[i], poly[j]
+			if properSegmentIntersect(ra, rb, pa, pb) {
+				return false
 			}
 		}
 	}
@@ -203,68 +210,64 @@ func isRectangleValid(a, b Tile, edges []Tile, insideArray map[Tile]struct{}) bo
 	return true
 }
 
-func main() {
-	// === Part 1 ===
-	redTiles := readRedTiles("input.txt")
-	log.Printf("Read %d red tiles\n", len(redTiles))
+func solve(filename string) {
+	points := readPoints(filename)
+	n := len(points)
+	if n < 2 {
+		log.Fatalf("need at least 2 red tiles")
+	}
 
-	largestArea := float64(-1)
-
-	for i := range redTiles {
-		for j := range redTiles {
-			if i != j {
-				area := rectangleArea(redTiles[i], redTiles[j])
-				if area > largestArea {
-					largestArea = area
-				}
+	// Part 1: largest rectangle from any two red tiles (no restriction)
+	var maxArea1 int64 = 0
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			a := points[i]
+			b := points[j]
+			area := rectangleArea(a, b)
+			if area > maxArea1 {
+				maxArea1 = area
 			}
 		}
 	}
-	log.Println("Part 1:", largestArea)
 
-	// === Test 2 ===
-	start := time.Now()
+	// Part 2: same, but rectangle must lie entirely in polygon whose
+	// vertices are the red tiles in input order.
+	// points already represent the loop (wrap-around).
+	var maxArea2 int64 = 0
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			a := points[i]
+			b := points[j]
 
-	redTiles = readRedTiles("input.txt")
-	log.Printf("Testing PointInPolygon with %d red tiles\n", len(redTiles))
-
-	var orderedTiles []Tile
-	orderedTiles = append(orderedTiles, redTiles...)
-	sort.Slice(orderedTiles, func(i, j int) bool {
-		return orderedTiles[i].X < orderedTiles[j].X
-	})
-
-	insideArray := make(map[Tile]struct{})
-	wrongRectangles := make(map[Rect]struct{})
-	largestArea = -1
-
-	for i := 0; i < len(orderedTiles); i++ {
-		log.Printf("Checking tile %d/%d, largest so far: %d, inside array: %d, wrong rectangles: %d\n",
-			i, len(orderedTiles), int(largestArea), len(insideArray), len(wrongRectangles))
-
-		t1 := orderedTiles[i]
-		for j := i + 1; j < len(orderedTiles); j++ {
-			t2 := orderedTiles[j]
-
-			currRectangle := Rect{t1, t2}
-
-			if isRectangleInsideInOthers(t1, t2, wrongRectangles) {
-				wrongRectangles[currRectangle] = struct{}{}
+			area := rectangleArea(a, b)
+			// quick pruning: cannot beat current best
+			if area <= maxArea2 {
 				continue
 			}
 
-			if isRectangleValid(t1, t2, redTiles, insideArray) {
-				area := rectangleArea(t1, t2)
-				largestArea = max(largestArea, area)
-			} else {
-				wrongRectangles[currRectangle] = struct{}{}
+			if rectangleInsidePolygon(a, b, points) {
+				maxArea2 = area
 			}
 		}
 	}
 
-	log.Println("Largest area float64:", largestArea)
-	log.Println("Largest area int64:", int64(largestArea))
-	log.Println("Largest area int:", int(largestArea))
+	fmt.Printf("Part 1: %d\n", maxArea1)
+	fmt.Printf("Part 2: %d\n", maxArea2)
+}
 
-	log.Printf("Program ran for %s\n", time.Since(start))
+func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	// measure execution time
+	start := time.Now()
+
+	if len(os.Args) < 2 {
+		// default to input.txt if no arg
+		solve("input.txt")
+	} else {
+		solve(os.Args[1])
+	}
+
+	elapsed := time.Since(start)
+	log.Printf("Execution time: %s", elapsed)
 }
