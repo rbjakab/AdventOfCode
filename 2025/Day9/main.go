@@ -12,10 +12,12 @@ import (
 )
 
 type Tile struct {
-	x, y int
+	X, Y float64
 }
 
-func readRedTiles(filename string) ([]Tile, Tile, int, int, int, int) {
+type Rect [2]Tile
+
+func readRedTiles(filename string) []Tile {
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatalf("failed to open %s: %v", filename, err)
@@ -24,32 +26,24 @@ func readRedTiles(filename string) ([]Tile, Tile, int, int, int, int) {
 
 	scanner := bufio.NewScanner(file)
 	var tiles []Tile
-	maxX, maxY := 0, 0
-	minX, minY := 0, 0
-	var topLeftTile Tile
+
+	// Initialize mins to +∞ so the first tile sets them
+	minX, minY := math.Inf(1), math.Inf(1)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		var t Tile
-		if _, err := fmt.Sscanf(line, "%d,%d", &t.x, &t.y); err == nil {
-			tiles = append(tiles, t)
-			if t.x > maxX {
-				maxX = t.x
+		var x, y float64
+		if _, err := fmt.Sscanf(line, "%f,%f", &x, &y); err == nil {
+
+			// track minimums
+			if x < minX {
+				minX = x
 			}
-			if t.y > maxY {
-				maxY = t.y
+			if y < minY {
+				minY = y
 			}
-			if len(tiles) == 1 {
-				topLeftTile = t
-			} else if t.x < topLeftTile.x && t.y < topLeftTile.y {
-				topLeftTile = t
-			}
-			if t.x < minX {
-				minX = t.x
-			}
-			if t.y < minY {
-				minY = t.y
-			}
+
+			tiles = append(tiles, Tile{X: x, Y: y})
 		}
 	}
 
@@ -57,116 +51,64 @@ func readRedTiles(filename string) ([]Tile, Tile, int, int, int, int) {
 		log.Fatalf("error reading %s: %v", filename, err)
 	}
 
+	// Normalize all tiles by subtracting minX, minY
 	for i := range tiles {
-		tiles[i].x -= minX
-		tiles[i].y -= minY
-	}
-	maxX -= minX
-	maxY -= minY
-
-	return tiles, topLeftTile, minX, minY, maxX, maxY
-}
-
-func abs(a int) int {
-	return int(math.Abs(float64(a)))
-}
-
-func rectangleArea(a, b Tile) int64 {
-	return int64(abs(a.x-b.x)+1) * int64(abs(a.y-b.y)+1)
-}
-
-func greenTilesBetween(a, b Tile) []Tile {
-	var greens []Tile
-	d := max(abs(a.x-b.x), abs(a.y-b.y)) - 1
-
-	if a.x == b.x { // vertical
-		x := a.x
-		y0 := min(a.y, b.y)
-		for i := 1; i <= d; i++ {
-			greens = append(greens, Tile{x, y0 + i})
-		}
-		return greens
+		tiles[i].X -= minX
+		tiles[i].Y -= minY
 	}
 
-	if a.y == b.y { // horizontal
-		y := a.y
-		x0 := min(a.x, b.x)
-		for i := 1; i <= d; i++ {
-			greens = append(greens, Tile{x0 + i, y})
-		}
-		return greens
+	return tiles
+}
+
+func rectangleArea(a, b Tile) float64 {
+	return (math.Abs(a.X-b.X) + 1.0) * (math.Abs(a.Y-b.Y) + 1.0)
+}
+
+// orientation test helper
+func orient(ax, ay, bx, by, cx, cy float64) float64 {
+	return (bx-ax)*(cy-ay) - (by-ay)*(cx-ax)
+}
+
+// check if P lies on segment A->B
+func onSegment(px, py, ax, ay, bx, by float64) bool {
+	if orient(ax, ay, bx, by, px, py) != 0 {
+		return false
 	}
-
-	return greens
-}
-
-func computeGreenLoop(redTiles []Tile) []Tile {
-	var greens []Tile
-	for i := 0; i < len(redTiles)-1; i++ {
-		greens = append(greens, greenTilesBetween(redTiles[i], redTiles[i+1])...)
+	if px < min(ax, bx) || px > max(ax, bx) {
+		return false
 	}
-	greens = append(greens, greenTilesBetween(redTiles[len(redTiles)-1], redTiles[0])...)
-	return greens
+	if py < min(ay, by) || py > max(ay, by) {
+		return false
+	}
+	return true
 }
 
-type TilePair struct {
-	tileA Tile
-	tileB Tile
-	area  int64
-}
+// PointInPolygon returns true if point P is inside or on boundary.
+func PointInPolygon(p Tile, poly []Tile) bool {
+	px, py := p.X, p.Y
+	n := len(poly)
 
-func BuildInsideMask(redGreenSet map[Tile]bool, topLeftTile Tile) map[Tile]struct{} {
-	inside := make(map[Tile]struct{}, len(redGreenSet)/4) // guess to reduce realloc
-	visited := inside                                     // alias
-	empty := struct{}{}
+	inside := false
 
-	// BFS queue using indices instead of slice pops
-	queue := make([]Tile, 0, 1024)
-	queue = append(queue, Tile{topLeftTile.x + 1, topLeftTile.y + 1})
+	for i := 0; i < n; i++ {
+		j := (i + 1) % n
+		xi, yi := poly[i].X, poly[i].Y
+		xj, yj := poly[j].X, poly[j].Y
 
-	for i := 0; i < len(queue); i++ {
-		curr := queue[i]
+		// 1. Check if point lies exactly on this edge → inside
+		if onSegment(px, py, xi, yi, xj, yj) {
+			return true
+		}
 
-		// 4-neighbors inline (avoid slice allocation)
-		nx := curr.x + 1
-		ny := curr.y
-		n := Tile{nx, ny}
-		if !redGreenSet[n] {
-			if _, ok := visited[n]; !ok {
-				visited[n] = empty
-				queue = append(queue, n)
+		// 2. Ray-casting: does edge cross the ray horizontally?
+		intersects := (yi > py) != (yj > py)
+		if intersects {
+			// compute x coordinate of intersection
+			xIntersect := xi + (py-yi)*(xj-xi)/(yj-yi)
+			if px <= xIntersect {
+				inside = !inside
 			}
 		}
-
-		n = Tile{curr.x - 1, curr.y}
-		if !redGreenSet[n] {
-			if _, ok := visited[n]; !ok {
-				visited[n] = empty
-				queue = append(queue, n)
-			}
-		}
-
-		n = Tile{curr.x, curr.y + 1}
-		if !redGreenSet[n] {
-			if _, ok := visited[n]; !ok {
-				visited[n] = empty
-				queue = append(queue, n)
-			}
-		}
-
-		n = Tile{curr.x, curr.y - 1}
-		if !redGreenSet[n] {
-			if _, ok := visited[n]; !ok {
-				visited[n] = empty
-				queue = append(queue, n)
-			}
-		}
-
-		// OPTIONAL: keep logging if needed
-		if i%5000000 == 0 && i > 0 {
-			log.Printf("Filled %d tiles, queue=%d", len(visited), len(queue))
-		}
-
 	}
 
 	return inside
@@ -174,11 +116,11 @@ func BuildInsideMask(redGreenSet map[Tile]bool, topLeftTile Tile) map[Tile]struc
 
 func isRectangleInsideInOthers(a, b Tile, rectangles map[Rect]struct{}) bool {
 	for rectangle := range rectangles {
-		topLeft := Tile{min(rectangle[0].x, rectangle[1].x), min(rectangle[0].y, rectangle[1].y)}
-		bottomRight := Tile{max(rectangle[0].x, rectangle[1].x), max(rectangle[0].y, rectangle[1].y)}
+		topLeft := Tile{min(rectangle[0].X, rectangle[1].X), min(rectangle[0].Y, rectangle[1].Y)}
+		bottomRight := Tile{max(rectangle[0].X, rectangle[1].X), max(rectangle[0].Y, rectangle[1].Y)}
 
-		if (topLeft.x <= a.x && a.x <= bottomRight.x) && (topLeft.y <= a.y && a.y <= bottomRight.y) &&
-			(topLeft.x <= b.x && b.x <= bottomRight.x) && (topLeft.y <= b.y && b.y <= bottomRight.y) {
+		if (topLeft.X <= a.X && a.X <= bottomRight.X) && (topLeft.Y <= a.Y && a.Y <= bottomRight.Y) &&
+			(topLeft.X <= b.X && b.X <= bottomRight.X) && (topLeft.Y <= b.Y && b.Y <= bottomRight.Y) {
 			return true
 		}
 	}
@@ -186,37 +128,74 @@ func isRectangleInsideInOthers(a, b Tile, rectangles map[Rect]struct{}) bool {
 	return false
 }
 
-func isRectangleValid(a, b Tile, inside map[Tile]struct{}) bool {
-	left := min(a.x, b.x)
-	right := max(a.x, b.x)
-	top := min(a.y, b.y)
-	bottom := max(a.y, b.y)
+func isRectangleValid(a, b Tile, edges []Tile, insideArray map[Tile]struct{}) bool {
+	left := min(a.X, b.X)
+	right := max(a.X, b.X)
+	top := min(a.Y, b.Y)
+	bottom := max(a.Y, b.Y)
 
 	// Check top and bottom edges
 	for x := left; x <= right; x++ {
-		if _, ok := inside[Tile{x, top}]; !ok {
-			return false
+		topTile := Tile{x, top}
+		_, okTop := insideArray[topTile]
+		if !okTop {
+			inside := PointInPolygon(topTile, edges)
+			if inside {
+				insideArray[topTile] = struct{}{}
+			} else {
+				return false
+			}
 		}
-		if _, ok := inside[Tile{x, bottom}]; !ok {
-			return false
+
+		bottomTile := Tile{x, bottom}
+		_, okBottom := insideArray[bottomTile]
+		if !okBottom {
+			inside := PointInPolygon(bottomTile, edges)
+			if inside {
+				insideArray[bottomTile] = struct{}{}
+			} else {
+				return false
+			}
 		}
 	}
 
 	// Check left and right edges
 	for y := top; y <= bottom; y++ {
-		if _, ok := inside[Tile{left, y}]; !ok {
-			return false
+		leftTile := Tile{left, y}
+		_, okLeft := insideArray[leftTile]
+		if !okLeft {
+			inside := PointInPolygon(leftTile, edges)
+			if inside {
+				insideArray[leftTile] = struct{}{}
+			} else {
+				return false
+			}
 		}
-		if _, ok := inside[Tile{right, y}]; !ok {
-			return false
+
+		rightTile := Tile{right, y}
+		_, okRight := insideArray[rightTile]
+		if !okRight {
+			inside := PointInPolygon(rightTile, edges)
+			if inside {
+				insideArray[rightTile] = struct{}{}
+			} else {
+				return false
+			}
 		}
 	}
 
 	// check inside
 	for x := left + 1; x < right; x++ {
 		for y := top + 1; y < bottom; y++ {
-			if _, ok := inside[Tile{x, y}]; !ok {
-				return false
+			tile := Tile{x, y}
+			if _, ok := insideArray[tile]; !ok {
+				inside := PointInPolygon(tile, edges)
+				if inside {
+					insideArray[tile] = struct{}{}
+				} else {
+					return false
+				}
+
 			}
 		}
 	}
@@ -224,15 +203,13 @@ func isRectangleValid(a, b Tile, inside map[Tile]struct{}) bool {
 	return true
 }
 
-type Rect [2]Tile
-
 func main() {
 	// === Part 1 ===
-	redTiles, topLeftTile, minX, minY, maxX, maxY := readRedTiles("input.txt")
-	log.Printf("Read %d red tiles, grid size: %d x %d\n", len(redTiles), maxX, maxY)
-	log.Printf("Start position: (%d, %d)\n", minX, minY)
+	redTiles := readRedTiles("input.txt")
+	log.Printf("Read %d red tiles\n", len(redTiles))
 
-	largestArea := int64(-1)
+	largestArea := float64(-1)
+
 	for i := range redTiles {
 		for j := range redTiles {
 			if i != j {
@@ -245,61 +222,49 @@ func main() {
 	}
 	log.Println("Part 1:", largestArea)
 
-	// === Part 2 ===
+	// === Test 2 ===
 	start := time.Now()
 
-	greenTiles := computeGreenLoop(redTiles)
-	redGreenSet := make(map[Tile]bool, len(redTiles)+len(greenTiles))
-	for _, t := range redTiles {
-		redGreenSet[t] = true
-	}
-	for _, t := range greenTiles {
-		redGreenSet[t] = true
-	}
+	redTiles = readRedTiles("input.txt")
+	log.Printf("Testing PointInPolygon with %d red tiles\n", len(redTiles))
 
-	// Build ordered list of rectangle pairs
-	var orderedTilePairs []TilePair
-	for i := range redTiles {
-		for j := i + 1; j < len(redTiles); j++ {
-			orderedTilePairs = append(orderedTilePairs, TilePair{
-				tileA: redTiles[i],
-				tileB: redTiles[j],
-				area:  rectangleArea(redTiles[i], redTiles[j]),
-			})
-		}
-	}
-	sort.Slice(orderedTilePairs, func(i, j int) bool {
-		return orderedTilePairs[i].area < orderedTilePairs[j].area
+	var orderedTiles []Tile
+	orderedTiles = append(orderedTiles, redTiles...)
+	sort.Slice(orderedTiles, func(i, j int) bool {
+		return orderedTiles[i].X < orderedTiles[j].X
 	})
 
-	log.Println("Building inside mask (scanline fill)...")
-	inside := BuildInsideMask(redGreenSet, topLeftTile)
-	log.Println("Inside mask ready, length:", len(inside))
-	log.Println("Top Left Tile:", topLeftTile)
-	log.Println("Grid size:", maxX, maxY)
+	insideArray := make(map[Tile]struct{})
 	wrongRectangles := make(map[Rect]struct{})
-
-	// Check rectangles using fast perimeter-only test
 	largestArea = -1
-	for i, pair := range orderedTilePairs {
-		if i%100 == 0 {
-			log.Printf("Checking rectangle %d / %d with area %d | largest: %d\n", i, len(orderedTilePairs), pair.area, largestArea)
-		}
 
-		currRectangle := Rect{pair.tileA, pair.tileB}
+	for i := 0; i < len(orderedTiles); i++ {
+		log.Printf("Checking tile %d/%d, largest so far: %d, inside array: %d, wrong rectangles: %d\n",
+			i, len(orderedTiles), int(largestArea), len(insideArray), len(wrongRectangles))
 
-		if isRectangleInsideInOthers(pair.tileA, pair.tileB, wrongRectangles) {
-			wrongRectangles[currRectangle] = struct{}{}
-			continue
-		}
+		t1 := orderedTiles[i]
+		for j := i + 1; j < len(orderedTiles); j++ {
+			t2 := orderedTiles[j]
 
-		if isRectangleValid(pair.tileA, pair.tileB, inside) {
-			largestArea = pair.area
-		} else {
-			wrongRectangles[currRectangle] = struct{}{}
+			currRectangle := Rect{t1, t2}
+
+			if isRectangleInsideInOthers(t1, t2, wrongRectangles) {
+				wrongRectangles[currRectangle] = struct{}{}
+				continue
+			}
+
+			if isRectangleValid(t1, t2, redTiles, insideArray) {
+				area := rectangleArea(t1, t2)
+				largestArea = max(largestArea, area)
+			} else {
+				wrongRectangles[currRectangle] = struct{}{}
+			}
 		}
 	}
 
-	log.Println("Part 2:", largestArea)
+	log.Println("Largest area float64:", largestArea)
+	log.Println("Largest area int64:", int64(largestArea))
+	log.Println("Largest area int:", int(largestArea))
+
 	log.Printf("Program ran for %s\n", time.Since(start))
 }
