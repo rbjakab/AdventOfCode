@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/btree"
 )
@@ -215,6 +216,8 @@ func sortedCircuitSizes(circuitByBox map[Box]int) []int {
 }
 
 func main() {
+	start := time.Now()
+
 	log.Println("Playground: starting simulation...")
 
 	// === TEST 1 (example from the puzzle description) ===
@@ -256,4 +259,6 @@ func main() {
 	log.Println("PART 2:",
 		"Multiplying the X coords of the last connection:",
 		part2)
+	log.Printf("Execution time: %s", time.Since(start))
+
 }

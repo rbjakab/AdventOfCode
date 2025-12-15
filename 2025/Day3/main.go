@@ -3,9 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"sort"
+	"time"
 )
 
 func getRanksSortedKeys(ranks map[int][]int) []int {
@@ -113,6 +115,8 @@ func part2GetMaxJoltageFromBank(bank string) int {
 }
 
 func main() {
+	start := time.Now()
+
 	// Open file
 	f, err := os.Open("./input.txt")
 	if err != nil {
@@ -122,15 +126,20 @@ func main() {
 	defer f.Close()
 
 	// Store total output
-	total := 0
+	totalPart1 := 0
+	totalPart2 := 0
 
 	// Scan its content line-by-line and work with it
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
-		joltage := part2GetMaxJoltageFromBank(line)
-		total += joltage
+		joltagePart1 := part1GetMaxJoltageFromBank(line)
+		joltagePart2 := part2GetMaxJoltageFromBank(line)
+		totalPart1 += joltagePart1
+		totalPart2 += joltagePart2
 	}
 
-	fmt.Println("Total joltage:", total)
+	fmt.Println("=== PART1: Total joltage:", totalPart1)
+	fmt.Println("=== PART2: Total joltage:", totalPart2)
+	log.Printf("Execution time: %s", time.Since(start))
 }

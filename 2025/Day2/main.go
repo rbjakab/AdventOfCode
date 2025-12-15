@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Range struct {
@@ -76,6 +77,7 @@ func part2IsIDValid(id int) bool {
 }
 
 func main() {
+	start := time.Now()
 	ranges := readInput("./input.txt")
 
 	fmt.Println("=== First Problem ===")
@@ -105,5 +107,5 @@ func main() {
 	}
 	fmt.Println("Results:", results)
 	fmt.Println("=== Second Problem ===")
-
+	log.Printf("Execution time: %s", time.Since(start))
 }

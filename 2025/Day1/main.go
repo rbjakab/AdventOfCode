@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
+	"time"
 )
 
 func readInput(filePath string) []string {
@@ -97,14 +99,15 @@ func solvePart2(words []string) int {
 		count, val = bigRotates(count, val)
 		currentPoint, plusCount = rotatePart2(direction, val, currentPoint)
 		count += plusCount
-		// fmt.Printf("%-4s %-4d %-4d %-4d\n", w, currentPoint, plusCount, count)
 	}
 	return count
 }
 
 func main() {
+	start := time.Now()
 	words := readInput("./input.txt")
 
 	fmt.Println("Number of times at zero, first problem:", solvePart1(words))
 	fmt.Println("Number of times at zero, second problem:", solvePart2(words))
+	log.Printf("Execution time: %s", time.Since(start))
 }

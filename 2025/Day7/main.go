@@ -3,9 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strings"
+	"time"
 )
 
 type Pos struct {
@@ -121,6 +123,8 @@ func travel(diagram []string, pos Pos) int {
 var cache = make(map[Pos]int)
 
 func main() {
+	start := time.Now()
+
 	// === TEST 1 ===
 	test_splits := readAndSolveInput("./test.txt")
 	fmt.Printf("TEST 1: There were %d splits in the TEST file (wanted: 21).\n", test_splits)
@@ -141,4 +145,6 @@ func main() {
 	startingPoint := strings.Index(diagram[0], "S")
 	activeTimelines := travel(diagram, Pos{row: 1, col: startingPoint})
 	fmt.Printf("PART 2: Active timelines: %d\n", activeTimelines)
+
+	log.Printf("Execution time: %s", time.Since(start))
 }

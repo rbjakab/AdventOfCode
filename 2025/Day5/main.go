@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type IntRange struct {
@@ -90,6 +91,8 @@ func mergeRanges(ranges []IntRange) []IntRange {
 }
 
 func main() {
+	start := time.Now()
+
 	ranges, ids := readInput("./input.txt")
 
 	freshCount := 0
@@ -106,4 +109,5 @@ func main() {
 		total += r.End - r.Start + 1
 	}
 	fmt.Println("Number of TOTAL available ingredient IDs that are fresh:", total)
+	log.Printf("Execution time: %s", time.Since(start))
 }

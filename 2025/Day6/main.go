@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func readInput(filename string) ([][]int, []string) {
@@ -135,7 +136,9 @@ func calculateRow(nums []int, op string) int {
 	return result
 }
 
-func main() {
+func solve() {
+	start := time.Now()
+
 	grid, ops := readInput("./input.txt")
 
 	// === PART 1 ===
@@ -156,4 +159,17 @@ func main() {
 		part2 += calculateRow(nums, ops[i])
 	}
 	fmt.Println("Left To Right Results:", part2)
+
+	log.Printf("Execution time: %s", time.Since(start))
+}
+
+const runs = 1000
+
+func main() {
+	start := time.Now()
+	for i := 0; i < runs; i++ {
+		solve()
+	}
+	elapsed := time.Since(start)
+	fmt.Printf("Avg per run: %v\n", elapsed/time.Duration(runs))
 }

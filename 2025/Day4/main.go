@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 // readCharGrid reads a text file where each line is a string,
@@ -168,6 +170,8 @@ func removeAccessibleRolls(array [][]string) ([][]string, int) {
 // main loads the input grid, pads it, counts accessible rolls (Part 1),
 // then repeatedly removes accessible rolls until none remain (Part 2).
 func main() {
+	start := time.Now()
+
 	array := readCharGrid("./input.txt")
 	extendedArray := extendArray(array)
 
@@ -186,4 +190,5 @@ func main() {
 	}
 
 	fmt.Println("Removed rolls:", totalRemovedRolls)
+	log.Printf("Execution time: %s", time.Since(start))
 }
