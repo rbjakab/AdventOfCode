@@ -1,4 +1,4 @@
-# 🎄 Richard's Advent of Code 🎄
+# 🎄 My Advent of Code 🎄
 
 > **Starting in 2025!**  
 > Learning **Go** one puzzle at a time 🚀
