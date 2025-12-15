@@ -49,6 +49,5 @@ I chose **Go (Golang)** to challenge myself and learn a new language while solvi
       ***********
      *************
     ***************
-   *****************
           ||||
           ||||
